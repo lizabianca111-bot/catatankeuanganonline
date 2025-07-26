@@ -1,0 +1,965 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Catatan Duniawi</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+    <script type="module">
+        // Import Firebase modules
+        import { initializeApp } from 'https://www.gstatic.com/firebasejs/9.22.0/firebase-app.js';
+        import { getDatabase, ref, push, set, onValue, remove, update, get } from 'https://www.gstatic.com/firebasejs/9.22.0/firebase-database.js';
+
+        // Firebase configuration
+        const firebaseConfig = {
+            apiKey: "AIzaSyBt1EQ-xceeNhed37wYH3eZNMhWkhHIbx4",
+            authDomain: "catatan-keuangan-b7125.firebaseapp.com",
+            databaseURL: "https://catatan-keuangan-b7125-default-rtdb.firebaseio.com",
+            projectId: "catatan-keuangan-b7125",
+            storageBucket: "catatan-keuangan-b7125.firebasestorage.app",
+            messagingSenderId: "784341168059",
+            appId: "1:784341168059:web:28fd2f26452a0e10e61e9e",
+            measurementId: "G-ZHB9WYRTKX"
+        };
+
+        // Initialize Firebase
+        const app = initializeApp(firebaseConfig);
+        const database = getDatabase(app);
+
+        // Global variables
+        let currentTab = 'dashboard';
+        let editingId = null;
+        let currentUser = null;
+
+        // Icon options
+        const iconOptions = {
+            'bank': 'fas fa-university',
+            'makanan': 'fas fa-utensils',
+            'ewallet': 'fas fa-mobile-alt',
+            'dompet': 'fas fa-wallet',
+            'belanja': 'fas fa-shopping-cart',
+            'transport': 'fas fa-car',
+            'hiburan': 'fas fa-gamepad',
+            'kesehatan': 'fas fa-heartbeat',
+            'pendidikan': 'fas fa-graduation-cap',
+            'rumah': 'fas fa-home',
+            'investasi': 'fas fa-chart-line',
+            'hadiah': 'fas fa-gift'
+        };
+
+        // Authentication functions
+        function showAuthPage() {
+            document.getElementById('auth-container').classList.remove('hidden');
+            document.getElementById('main-app').classList.add('hidden');
+        }
+
+        function showMainApp() {
+            document.getElementById('auth-container').classList.add('hidden');
+            document.getElementById('main-app').classList.remove('hidden');
+        }
+
+        function toggleAuthForm() {
+            const loginForm = document.getElementById('login-form');
+            const registerForm = document.getElementById('register-form');
+            const authTitle = document.getElementById('auth-title');
+            const toggleText = document.getElementById('toggle-text');
+            const toggleLink = document.getElementById('toggle-link');
+
+            if (loginForm.classList.contains('hidden')) {
+                // Show login form
+                loginForm.classList.remove('hidden');
+                registerForm.classList.add('hidden');
+                authTitle.textContent = 'Masuk ke Catatan Duniawi';
+                toggleText.textContent = 'Belum punya akun? ';
+                toggleLink.textContent = 'Daftar di sini';
+            } else {
+                // Show register form
+                loginForm.classList.add('hidden');
+                registerForm.classList.remove('hidden');
+                authTitle.textContent = 'Daftar Catatan Duniawi';
+                toggleText.textContent = 'Sudah punya akun? ';
+                toggleLink.textContent = 'Masuk di sini';
+            }
+        }
+
+        async function register() {
+            const username = document.getElementById('register-username').value.trim();
+            const password = document.getElementById('register-password').value;
+            const confirmPassword = document.getElementById('register-confirm-password').value;
+
+            if (!username || !password || !confirmPassword) {
+                alert('Semua field harus diisi!');
+                return;
+            }
+
+            if (password !== confirmPassword) {
+                alert('Password dan konfirmasi password tidak sama!');
+                return;
+            }
+
+            if (password.length < 6) {
+                alert('Password minimal 6 karakter!');
+                return;
+            }
+
+            try {
+                // Check if username already exists
+                const usersRef = ref(database, 'users');
+                const snapshot = await get(usersRef);
+                const users = snapshot.val();
+
+                if (users) {
+                    const existingUser = Object.values(users).find(user => user.username === username);
+                    if (existingUser) {
+                        alert('Username sudah digunakan! Silakan pilih username lain.');
+                        return;
+                    }
+                }
+
+                // Create new user
+                const newUserRef = push(usersRef);
+                await set(newUserRef, {
+                    username: username,
+                    password: password, // In production, this should be hashed
+                    createdAt: new Date().toISOString()
+                });
+
+                alert('Pendaftaran berhasil! Silakan login.');
+                toggleAuthForm(); // Switch to login form
+                document.getElementById('register-form').reset();
+            } catch (error) {
+                console.error('Registration error:', error);
+                alert('Terjadi kesalahan saat mendaftar. Silakan coba lagi.');
+            }
+        }
+
+        async function login() {
+            const username = document.getElementById('login-username').value.trim();
+            const password = document.getElementById('login-password').value;
+
+            if (!username || !password) {
+                alert('Username dan password harus diisi!');
+                return;
+            }
+
+            try {
+                const usersRef = ref(database, 'users');
+                const snapshot = await get(usersRef);
+                const users = snapshot.val();
+
+                if (users) {
+                    const userEntry = Object.entries(users).find(([key, user]) => 
+                        user.username === username && user.password === password
+                    );
+
+                    if (userEntry) {
+                        currentUser = {
+                            id: userEntry[0],
+                            username: userEntry[1].username
+                        };
+                        
+                        // Store user session
+                        localStorage.setItem('currentUser', JSON.stringify(currentUser));
+                        
+                        showMainApp();
+                        showTab('dashboard');
+                        document.getElementById('login-form').reset();
+                        
+                        // Update welcome message
+                        document.getElementById('welcome-user').textContent = `Selamat datang, ${currentUser.username}!`;
+                    } else {
+                        alert('Username atau password salah!');
+                    }
+                } else {
+                    alert('Username atau password salah!');
+                }
+            } catch (error) {
+                console.error('Login error:', error);
+                alert('Terjadi kesalahan saat login. Silakan coba lagi.');
+            }
+        }
+
+        function logout() {
+            if (confirm('Apakah Anda yakin ingin keluar?')) {
+                currentUser = null;
+                localStorage.removeItem('currentUser');
+                showAuthPage();
+                document.getElementById('login-form').reset();
+                document.getElementById('register-form').reset();
+            }
+        }
+
+        function checkAuthStatus() {
+            const storedUser = localStorage.getItem('currentUser');
+            if (storedUser) {
+                currentUser = JSON.parse(storedUser);
+                document.getElementById('welcome-user').textContent = `Selamat datang, ${currentUser.username}!`;
+                showMainApp();
+                showTab('dashboard');
+            } else {
+                showAuthPage();
+            }
+        }
+
+        // Format currency
+        function formatCurrency(amount) {
+            return new Intl.NumberFormat('id-ID', {
+                style: 'currency',
+                currency: 'IDR',
+                minimumFractionDigits: 0
+            }).format(amount);
+        }
+
+        // Show tab
+        function showTab(tabName) {
+            currentTab = tabName;
+            document.querySelectorAll('.tab-content').forEach(tab => {
+                tab.classList.add('hidden');
+            });
+            document.querySelectorAll('.tab-button').forEach(btn => {
+                btn.classList.remove('bg-gradient-to-r', 'from-blue-600', 'to-blue-700', 'text-white', 'shadow-lg', 'transform', 'hover:scale-105');
+                btn.classList.add('bg-white/70', 'text-gray-700', 'hover:bg-white', 'hover:shadow-md');
+            });
+            
+            document.getElementById(tabName).classList.remove('hidden');
+            const activeBtn = document.querySelector(`[onclick="showTab('${tabName}')"]`);
+            activeBtn.classList.remove('bg-white/70', 'text-gray-700', 'hover:bg-white', 'hover:shadow-md');
+            activeBtn.classList.add('bg-gradient-to-r', 'from-blue-600', 'to-blue-700', 'text-white', 'shadow-lg', 'transform', 'hover:scale-105');
+            
+            if (tabName === 'dashboard') {
+                loadDashboard();
+            } else if (tabName === 'pengeluaran-bulanan') {
+                loadMonthlyExpenses();
+            } else {
+                loadData(tabName);
+            }
+        }
+
+        // Load dashboard data
+        function loadDashboard() {
+            if (!currentUser) return;
+            
+            const categories = ['tabungan', 'komisi', 'piutang', 'hutang', 'pengeluaran-tetap', 'pengeluaran-harian'];
+            let totals = {};
+            let loadedCount = 0;
+
+            categories.forEach(category => {
+                const categoryRef = ref(database, `userData/${currentUser.id}/${category}`);
+                onValue(categoryRef, (snapshot) => {
+                    const data = snapshot.val();
+                    let total = 0;
+                    if (data) {
+                        Object.values(data).forEach(item => {
+                            total += parseFloat(item.amount) || 0;
+                        });
+                    }
+                    totals[category] = total;
+                    loadedCount++;
+                    
+                    if (loadedCount === categories.length) {
+                        updateDashboard(totals);
+                    }
+                });
+            });
+        }
+
+        // Update dashboard display
+        function updateDashboard(totals) {
+            document.getElementById('total-tabungan').textContent = formatCurrency(totals.tabungan || 0);
+            document.getElementById('total-komisi').textContent = formatCurrency(totals.komisi || 0);
+            document.getElementById('total-piutang').textContent = formatCurrency(totals.piutang || 0);
+            document.getElementById('total-hutang').textContent = formatCurrency(totals.hutang || 0);
+            document.getElementById('total-pengeluaran-tetap').textContent = formatCurrency(totals['pengeluaran-tetap'] || 0);
+            document.getElementById('total-pengeluaran-harian').textContent = formatCurrency(totals['pengeluaran-harian'] || 0);
+            
+            const saldoAkhir = (totals.tabungan || 0) + (totals.komisi || 0) + (totals.piutang || 0) - (totals.hutang || 0) - (totals['pengeluaran-tetap'] || 0);
+            document.getElementById('saldo-akhir').textContent = formatCurrency(saldoAkhir);
+        }
+
+        // Load data for specific category
+        function loadData(category) {
+            if (!currentUser) return;
+            
+            const dataRef = ref(database, `userData/${currentUser.id}/${category}`);
+            onValue(dataRef, (snapshot) => {
+                const data = snapshot.val();
+                const container = document.getElementById(`${category}-list`);
+                container.innerHTML = '';
+                
+                if (data) {
+                    let entries = Object.entries(data);
+                    
+                    // Sort by date for pengeluaran-harian (newest first)
+                    if (category === 'pengeluaran-harian') {
+                        entries.sort(([,a], [,b]) => new Date(b.date) - new Date(a.date));
+                    }
+                    
+                    entries.forEach(([key, item]) => {
+                        const itemElement = createItemElement(key, item, category);
+                        container.appendChild(itemElement);
+                    });
+                }
+            });
+        }
+
+        // Load monthly expenses
+        function loadMonthlyExpenses() {
+            if (!currentUser) return;
+            
+            const monthlyRef = ref(database, `userData/${currentUser.id}/pengeluaran-bulanan`);
+            onValue(monthlyRef, (snapshot) => {
+                const data = snapshot.val();
+                const container = document.getElementById('pengeluaran-bulanan-list');
+                container.innerHTML = '';
+                
+                if (data) {
+                    Object.entries(data).forEach(([key, item]) => {
+                        const itemElement = createMonthlyItemElement(key, item);
+                        container.appendChild(itemElement);
+                    });
+                }
+            });
+        }
+
+        // Create item element
+        function createItemElement(key, item, category) {
+            const div = document.createElement('div');
+            div.className = 'bg-white/80 backdrop-blur-sm p-4 sm:p-5 rounded-2xl shadow-lg border border-white/20 hover:shadow-xl transition-all duration-300 transform hover:scale-[1.02]';
+            
+            const editButton = document.createElement('button');
+            editButton.className = 'p-2 text-blue-600 hover:text-blue-800 hover:bg-blue-50 rounded-lg transition-colors';
+            editButton.innerHTML = '<i class="fas fa-edit text-sm"></i>';
+            editButton.onclick = () => editItem(key, category);
+            
+            const deleteButton = document.createElement('button');
+            deleteButton.className = 'p-2 text-red-600 hover:text-red-800 hover:bg-red-50 rounded-lg transition-colors';
+            deleteButton.innerHTML = '<i class="fas fa-trash text-sm"></i>';
+            deleteButton.onclick = () => deleteItem(key, category);
+            
+            div.innerHTML = `
+                <div class="flex items-center justify-between">
+                    <div class="flex items-center space-x-3 sm:space-x-4 flex-1 min-w-0">
+                        <div class="bg-blue-100 p-2 sm:p-3 rounded-xl flex-shrink-0">
+                            <i class="${iconOptions[item.icon] || 'fas fa-circle'} text-lg sm:text-xl text-blue-600"></i>
+                        </div>
+                        <div class="min-w-0 flex-1">
+                            <h3 class="font-semibold text-gray-800 text-sm sm:text-base truncate">${item.description}</h3>
+                            <p class="text-xs sm:text-sm text-gray-500 mt-1">${new Date(item.date).toLocaleDateString('id-ID', { 
+                                weekday: 'short', 
+                                year: 'numeric', 
+                                month: 'short', 
+                                day: 'numeric' 
+                            })}</p>
+                        </div>
+                    </div>
+                    <div class="flex items-center space-x-2 sm:space-x-3 flex-shrink-0 ml-3">
+                        <span class="font-bold text-sm sm:text-lg text-green-600">${formatCurrency(item.amount)}</span>
+                        <div class="flex space-x-1" id="buttons-${key}">
+                        </div>
+                    </div>
+                </div>
+            `;
+            
+            const buttonsContainer = div.querySelector(`#buttons-${key}`);
+            buttonsContainer.appendChild(editButton);
+            buttonsContainer.appendChild(deleteButton);
+            
+            return div;
+        }
+
+        // Create monthly item element
+        function createMonthlyItemElement(key, item) {
+            const div = document.createElement('div');
+            div.className = 'bg-white/80 backdrop-blur-sm p-4 sm:p-5 rounded-2xl shadow-lg border border-white/20 hover:shadow-xl transition-all duration-300';
+            div.innerHTML = `
+                <div class="flex items-center justify-between">
+                    <div class="flex items-center space-x-3 sm:space-x-4 flex-1">
+                        <div class="bg-purple-100 p-2 sm:p-3 rounded-xl flex-shrink-0">
+                            <i class="fas fa-calendar-alt text-lg sm:text-xl text-purple-600"></i>
+                        </div>
+                        <div class="min-w-0 flex-1">
+                            <h3 class="font-semibold text-gray-800 text-sm sm:text-base">${item.month}</h3>
+                            <p class="text-xs sm:text-sm text-gray-500 mt-1">Total pengeluaran harian bulan ini</p>
+                        </div>
+                    </div>
+                    <span class="font-bold text-sm sm:text-lg text-red-600 flex-shrink-0 ml-3">${formatCurrency(item.amount)}</span>
+                </div>
+            `;
+            return div;
+        }
+
+        // Add new item
+        function addItem(category) {
+            if (!currentUser) return;
+            
+            const form = document.getElementById(`${category}-form`);
+            const formData = new FormData(form);
+            
+            let itemDate;
+            if (category === 'pengeluaran-harian' && formData.get('expense_date')) {
+                itemDate = new Date(formData.get('expense_date')).toISOString();
+            } else {
+                itemDate = new Date().toISOString();
+            }
+            
+            const item = {
+                description: formData.get('description'),
+                amount: parseFloat(formData.get('amount')),
+                icon: formData.get('icon'),
+                date: itemDate
+            };
+
+            if (editingId) {
+                const itemRef = ref(database, `userData/${currentUser.id}/${category}/${editingId}`);
+                update(itemRef, item);
+                editingId = null;
+                document.getElementById(`add-${category}-btn`).textContent = 'Tambah';
+            } else {
+                const itemsRef = ref(database, `userData/${currentUser.id}/${category}`);
+                push(itemsRef, item);
+            }
+            
+            form.reset();
+            toggleForm(category);
+        }
+
+        // Edit item
+        function editItem(key, category) {
+            if (!currentUser) return;
+            
+            editingId = key;
+            const itemRef = ref(database, `userData/${currentUser.id}/${category}/${key}`);
+            onValue(itemRef, (snapshot) => {
+                const item = snapshot.val();
+                if (item) {
+                    document.querySelector(`#${category}-form input[name="description"]`).value = item.description;
+                    document.querySelector(`#${category}-form input[name="amount"]`).value = item.amount;
+                    document.querySelector(`#${category}-form select[name="icon"]`).value = item.icon;
+                    
+                    // Handle date field for pengeluaran-harian
+                    if (category === 'pengeluaran-harian') {
+                        const dateInput = document.querySelector(`#${category}-form input[name="expense_date"]`);
+                        if (dateInput && item.date) {
+                            const dateValue = new Date(item.date).toISOString().split('T')[0];
+                            dateInput.value = dateValue;
+                        }
+                    }
+                    
+                    document.getElementById(`add-${category}-btn`).textContent = 'Update';
+                    document.getElementById(`${category}-form-container`).classList.remove('hidden');
+                }
+            }, { once: true });
+        }
+
+        // Delete item
+        function deleteItem(key, category) {
+            if (!currentUser) return;
+            
+            if (confirm('Apakah Anda yakin ingin menghapus item ini?')) {
+                const itemRef = ref(database, `userData/${currentUser.id}/${category}/${key}`);
+                remove(itemRef).then(() => {
+                    console.log('Item berhasil dihapus');
+                }).catch((error) => {
+                    console.error('Error menghapus item:', error);
+                    alert('Gagal menghapus item. Silakan coba lagi.');
+                });
+            }
+        }
+
+        // Toggle form visibility
+        function toggleForm(category) {
+            const formContainer = document.getElementById(`${category}-form-container`);
+            formContainer.classList.toggle('hidden');
+            if (!formContainer.classList.contains('hidden')) {
+                editingId = null;
+                document.getElementById(`add-${category}-btn`).textContent = 'Tambah';
+            }
+        }
+
+        // Reset monthly expenses (should be called at the beginning of each month)
+        function resetMonthlyExpenses() {
+            if (!currentUser) return;
+            
+            if (confirm('⚠️ PERINGATAN!\n\nApakah Anda yakin ingin mereset pengeluaran harian?\n\nTindakan ini akan:\n• Memindahkan semua pengeluaran harian ke pengeluaran bulanan\n• Menghapus SEMUA data pengeluaran harian yang ada\n• Tidak dapat dibatalkan\n\nLanjutkan?')) {
+                const dailyRef = ref(database, `userData/${currentUser.id}/pengeluaran-harian`);
+                onValue(dailyRef, (snapshot) => {
+                    const data = snapshot.val();
+                    if (data) {
+                        let total = 0;
+                        Object.values(data).forEach(item => {
+                            total += parseFloat(item.amount) || 0;
+                        });
+                        
+                        // Save to monthly expenses
+                        const monthlyRef = ref(database, `userData/${currentUser.id}/pengeluaran-bulanan`);
+                        const currentMonth = new Date().toLocaleDateString('id-ID', { year: 'numeric', month: 'long' });
+                        push(monthlyRef, {
+                            month: currentMonth,
+                            amount: total,
+                            date: new Date().toISOString()
+                        });
+                        
+                        // Clear daily expenses
+                        set(dailyRef, null);
+                        
+                        alert('✅ Reset berhasil! Pengeluaran harian telah dipindahkan ke pengeluaran bulanan.');
+                    } else {
+                        alert('ℹ️ Tidak ada data pengeluaran harian untuk direset.');
+                    }
+                }, { once: true });
+            }
+        }
+
+        // Make functions global
+        window.showTab = showTab;
+        window.addItem = addItem;
+        window.editItem = editItem;
+        window.deleteItem = deleteItem;
+        window.toggleForm = toggleForm;
+        window.resetMonthlyExpenses = resetMonthlyExpenses;
+        window.toggleAuthForm = toggleAuthForm;
+        window.register = register;
+        window.login = login;
+        window.logout = logout;
+
+        // Initialize app
+        document.addEventListener('DOMContentLoaded', function() {
+            checkAuthStatus();
+            
+            // Set default date to today for pengeluaran-harian
+            const dateInput = document.querySelector('input[name="expense_date"]');
+            if (dateInput) {
+                const today = new Date().toISOString().split('T')[0];
+                dateInput.value = today;
+            }
+        });
+    </script>
+</head>
+<body class="bg-gradient-to-br from-blue-50 via-indigo-50 to-purple-50 min-h-screen">
+    <!-- Authentication Container -->
+    <div id="auth-container" class="min-h-screen flex items-center justify-center px-4">
+        <div class="bg-white/90 backdrop-blur-sm rounded-3xl shadow-2xl p-8 w-full max-w-md border border-white/30">
+            <div class="text-center mb-8">
+                <h1 class="text-3xl font-bold bg-gradient-to-r from-blue-600 to-purple-600 bg-clip-text text-transparent mb-2">
+                    💰 Catatan Duniawi
+                </h1>
+                <h2 id="auth-title" class="text-xl font-semibold text-gray-800 mb-4">Masuk ke Catatan Duniawi</h2>
+                <p class="text-gray-600 text-sm">Kelola keuangan Anda dengan mudah dan terorganisir</p>
+            </div>
+
+            <!-- Login Form -->
+            <form id="login-form" onsubmit="event.preventDefault(); login();" class="space-y-4">
+                <div>
+                    <input type="text" id="login-username" placeholder="Username" required 
+                           class="w-full px-4 py-3 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white/80 text-sm">
+                </div>
+                <div>
+                    <input type="password" id="login-password" placeholder="Password" required 
+                           class="w-full px-4 py-3 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white/80 text-sm">
+                </div>
+                <button type="submit" class="w-full bg-gradient-to-r from-blue-600 to-blue-700 text-white py-3 rounded-xl hover:from-blue-700 hover:to-blue-800 transition-all duration-300 shadow-lg transform hover:scale-[1.02] font-medium">
+                    <i class="fas fa-sign-in-alt mr-2"></i>Masuk
+                </button>
+            </form>
+
+            <!-- Register Form -->
+            <form id="register-form" onsubmit="event.preventDefault(); register();" class="space-y-4 hidden">
+                <div>
+                    <input type="text" id="register-username" placeholder="Username" required 
+                           class="w-full px-4 py-3 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white/80 text-sm">
+                </div>
+                <div>
+                    <input type="password" id="register-password" placeholder="Password (min. 6 karakter)" required 
+                           class="w-full px-4 py-3 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white/80 text-sm">
+                </div>
+                <div>
+                    <input type="password" id="register-confirm-password" placeholder="Konfirmasi Password" required 
+                           class="w-full px-4 py-3 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white/80 text-sm">
+                </div>
+                <button type="submit" class="w-full bg-gradient-to-r from-green-600 to-green-700 text-white py-3 rounded-xl hover:from-green-700 hover:to-green-800 transition-all duration-300 shadow-lg transform hover:scale-[1.02] font-medium">
+                    <i class="fas fa-user-plus mr-2"></i>Daftar
+                </button>
+            </form>
+
+            <!-- Toggle Link -->
+            <div class="text-center mt-6 pt-4 border-t border-gray-200">
+                <p class="text-sm text-gray-600">
+                    <span id="toggle-text">Belum punya akun? </span>
+                    <button onclick="toggleAuthForm()" id="toggle-link" class="text-blue-600 hover:text-blue-800 font-medium">
+                        Daftar di sini
+                    </button>
+                </p>
+            </div>
+
+            <!-- Footer -->
+            <div class="mt-6 pt-4 border-t border-gray-200/50">
+                <p class="text-xs text-gray-500 text-center">
+                    <i class="fas fa-code mr-1"></i>Powered by <span class="font-semibold text-blue-600">Aldi Sudrajad</span>
+                </p>
+            </div>
+        </div>
+    </div>
+
+    <!-- Main Application -->
+    <div id="main-app" class="hidden">
+        <div class="container mx-auto px-3 sm:px-4 lg:px-6 py-4 sm:py-8 max-w-7xl">
+        <!-- Header -->
+        <div class="text-center mb-6 sm:mb-8">
+            <div class="bg-white/80 backdrop-blur-sm rounded-2xl p-4 sm:p-6 shadow-lg border border-white/20">
+                <div class="flex justify-between items-start mb-4">
+                    <div class="flex-1">
+                        <h1 class="text-2xl sm:text-3xl lg:text-4xl font-bold bg-gradient-to-r from-blue-600 to-purple-600 bg-clip-text text-transparent mb-2">
+                            💰 Catatan Duniawi
+                        </h1>
+                        <p id="welcome-user" class="text-green-600 font-medium text-sm sm:text-base mb-2">Selamat datang!</p>
+                        <p class="text-gray-600 text-sm sm:text-base">Kelola keuangan Anda dengan mudah dan terorganisir</p>
+                    </div>
+                    <button onclick="logout()" class="bg-red-500 hover:bg-red-600 text-white px-3 py-2 rounded-lg text-xs sm:text-sm transition-colors duration-300 flex items-center">
+                        <i class="fas fa-sign-out-alt mr-1"></i>
+                        <span class="hidden sm:inline">Keluar</span>
+                    </button>
+                </div>
+                <div class="pt-3 border-t border-gray-200/50">
+                    <p class="text-xs text-gray-500 text-center">
+                        <i class="fas fa-code mr-1"></i>Powered by <span class="font-semibold text-blue-600">Aldi Sudrajad</span>
+                    </p>
+                </div>
+            </div>
+        </div>
+
+        <!-- Navigation Tabs -->
+        <div class="mb-6 sm:mb-8">
+            <div class="bg-white/80 backdrop-blur-sm rounded-2xl p-3 sm:p-4 shadow-lg border border-white/20">
+                <div class="grid grid-cols-2 sm:grid-cols-3 lg:flex lg:flex-wrap lg:justify-center gap-2">
+                    <button onclick="showTab('dashboard')" class="tab-button px-3 py-2 sm:px-4 sm:py-2 rounded-xl font-medium transition-all duration-300 bg-gradient-to-r from-blue-600 to-blue-700 text-white shadow-lg transform hover:scale-105">
+                        <i class="fas fa-tachometer-alt mr-1 sm:mr-2"></i>
+                        <span class="text-xs sm:text-sm">Dashboard</span>
+                    </button>
+                    <button onclick="showTab('tabungan')" class="tab-button px-3 py-2 sm:px-4 sm:py-2 rounded-xl font-medium transition-all duration-300 bg-white/70 text-gray-700 hover:bg-white hover:shadow-md">
+                        <i class="fas fa-piggy-bank mr-1 sm:mr-2 text-green-600"></i>
+                        <span class="text-xs sm:text-sm">Tabungan</span>
+                    </button>
+                    <button onclick="showTab('komisi')" class="tab-button px-3 py-2 sm:px-4 sm:py-2 rounded-xl font-medium transition-all duration-300 bg-white/70 text-gray-700 hover:bg-white hover:shadow-md">
+                        <i class="fas fa-percentage mr-1 sm:mr-2 text-blue-600"></i>
+                        <span class="text-xs sm:text-sm">Komisi</span>
+                    </button>
+                    <button onclick="showTab('piutang')" class="tab-button px-3 py-2 sm:px-4 sm:py-2 rounded-xl font-medium transition-all duration-300 bg-white/70 text-gray-700 hover:bg-white hover:shadow-md">
+                        <i class="fas fa-hand-holding-usd mr-1 sm:mr-2 text-yellow-600"></i>
+                        <span class="text-xs sm:text-sm">Piutang</span>
+                    </button>
+                    <button onclick="showTab('hutang')" class="tab-button px-3 py-2 sm:px-4 sm:py-2 rounded-xl font-medium transition-all duration-300 bg-white/70 text-gray-700 hover:bg-white hover:shadow-md">
+                        <i class="fas fa-credit-card mr-1 sm:mr-2 text-pink-600"></i>
+                        <span class="text-xs sm:text-sm">Hutang</span>
+                    </button>
+                    <button onclick="showTab('pengeluaran-tetap')" class="tab-button px-3 py-2 sm:px-4 sm:py-2 rounded-xl font-medium transition-all duration-300 bg-white/70 text-gray-700 hover:bg-white hover:shadow-md">
+                        <i class="fas fa-receipt mr-1 sm:mr-2 text-red-600"></i>
+                        <span class="text-xs sm:text-sm">P. Tetap</span>
+                    </button>
+                    <button onclick="showTab('pengeluaran-harian')" class="tab-button px-3 py-2 sm:px-4 sm:py-2 rounded-xl font-medium transition-all duration-300 bg-white/70 text-gray-700 hover:bg-white hover:shadow-md">
+                        <i class="fas fa-shopping-basket mr-1 sm:mr-2 text-orange-600"></i>
+                        <span class="text-xs sm:text-sm">P. Harian</span>
+                    </button>
+                    <button onclick="showTab('pengeluaran-bulanan')" class="tab-button px-3 py-2 sm:px-4 sm:py-2 rounded-xl font-medium transition-all duration-300 bg-white/70 text-gray-700 hover:bg-white hover:shadow-md col-span-2 sm:col-span-1">
+                        <i class="fas fa-calendar-alt mr-1 sm:mr-2 text-purple-600"></i>
+                        <span class="text-xs sm:text-sm">P. Bulanan</span>
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Dashboard Tab -->
+        <div id="dashboard" class="tab-content">
+            <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-6 mb-6 sm:mb-8">
+                <div class="bg-gradient-to-br from-green-50 to-green-100 p-4 sm:p-6 rounded-2xl shadow-lg border border-green-200/50 hover:shadow-xl transition-all duration-300">
+                    <div class="flex items-center justify-between">
+                        <div>
+                            <p class="text-xs sm:text-sm text-green-700 font-medium">Total Tabungan</p>
+                            <p id="total-tabungan" class="text-lg sm:text-2xl font-bold text-green-600 mt-1">Rp 0</p>
+                        </div>
+                        <div class="bg-green-200/50 p-3 rounded-xl">
+                            <i class="fas fa-piggy-bank text-2xl sm:text-3xl text-green-600"></i>
+                        </div>
+                    </div>
+                </div>
+                <div class="bg-gradient-to-br from-blue-50 to-blue-100 p-4 sm:p-6 rounded-2xl shadow-lg border border-blue-200/50 hover:shadow-xl transition-all duration-300">
+                    <div class="flex items-center justify-between">
+                        <div>
+                            <p class="text-xs sm:text-sm text-blue-700 font-medium">Total Komisi</p>
+                            <p id="total-komisi" class="text-lg sm:text-2xl font-bold text-blue-600 mt-1">Rp 0</p>
+                        </div>
+                        <div class="bg-blue-200/50 p-3 rounded-xl">
+                            <i class="fas fa-percentage text-2xl sm:text-3xl text-blue-600"></i>
+                        </div>
+                    </div>
+                </div>
+                <div class="bg-gradient-to-br from-yellow-50 to-yellow-100 p-4 sm:p-6 rounded-2xl shadow-lg border border-yellow-200/50 hover:shadow-xl transition-all duration-300">
+                    <div class="flex items-center justify-between">
+                        <div>
+                            <p class="text-xs sm:text-sm text-yellow-700 font-medium">Total Piutang</p>
+                            <p id="total-piutang" class="text-lg sm:text-2xl font-bold text-yellow-600 mt-1">Rp 0</p>
+                        </div>
+                        <div class="bg-yellow-200/50 p-3 rounded-xl">
+                            <i class="fas fa-hand-holding-usd text-2xl sm:text-3xl text-yellow-600"></i>
+                        </div>
+                    </div>
+                </div>
+                <div class="bg-gradient-to-br from-pink-50 to-pink-100 p-4 sm:p-6 rounded-2xl shadow-lg border border-pink-200/50 hover:shadow-xl transition-all duration-300">
+                    <div class="flex items-center justify-between">
+                        <div>
+                            <p class="text-xs sm:text-sm text-pink-700 font-medium">Total Hutang</p>
+                            <p id="total-hutang" class="text-lg sm:text-2xl font-bold text-pink-600 mt-1">Rp 0</p>
+                        </div>
+                        <div class="bg-pink-200/50 p-3 rounded-xl">
+                            <i class="fas fa-credit-card text-2xl sm:text-3xl text-pink-600"></i>
+                        </div>
+                    </div>
+                </div>
+                <div class="bg-gradient-to-br from-red-50 to-red-100 p-4 sm:p-6 rounded-2xl shadow-lg border border-red-200/50 hover:shadow-xl transition-all duration-300">
+                    <div class="flex items-center justify-between">
+                        <div>
+                            <p class="text-xs sm:text-sm text-red-700 font-medium">Pengeluaran Tetap</p>
+                            <p id="total-pengeluaran-tetap" class="text-lg sm:text-2xl font-bold text-red-600 mt-1">Rp 0</p>
+                        </div>
+                        <div class="bg-red-200/50 p-3 rounded-xl">
+                            <i class="fas fa-receipt text-2xl sm:text-3xl text-red-600"></i>
+                        </div>
+                    </div>
+                </div>
+                <div class="bg-gradient-to-br from-orange-50 to-orange-100 p-4 sm:p-6 rounded-2xl shadow-lg border border-orange-200/50 hover:shadow-xl transition-all duration-300">
+                    <div class="flex items-center justify-between">
+                        <div>
+                            <p class="text-xs sm:text-sm text-orange-700 font-medium">Pengeluaran Harian</p>
+                            <p id="total-pengeluaran-harian" class="text-lg sm:text-2xl font-bold text-orange-600 mt-1">Rp 0</p>
+                        </div>
+                        <div class="bg-orange-200/50 p-3 rounded-xl">
+                            <i class="fas fa-shopping-basket text-2xl sm:text-3xl text-orange-600"></i>
+                        </div>
+                    </div>
+                </div>
+                <div class="bg-gradient-to-br from-purple-50 to-purple-100 p-4 sm:p-6 rounded-2xl shadow-lg border-2 border-purple-300/50 hover:shadow-xl transition-all duration-300 sm:col-span-2 lg:col-span-1">
+                    <div class="flex items-center justify-between">
+                        <div>
+                            <p class="text-xs sm:text-sm text-purple-700 font-medium">Saldo Akhir</p>
+                            <p id="saldo-akhir" class="text-lg sm:text-2xl font-bold text-purple-600 mt-1">Rp 0</p>
+                        </div>
+                        <div class="bg-purple-200/50 p-3 rounded-xl">
+                            <i class="fas fa-wallet text-2xl sm:text-3xl text-purple-600"></i>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            
+
+        </div>
+
+        <!-- Tabungan Tab -->
+        <div id="tabungan" class="tab-content hidden">
+            <div class="bg-white/80 backdrop-blur-sm rounded-2xl shadow-lg p-4 sm:p-6 mb-6 border border-white/20">
+                <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-4 sm:mb-6 gap-3">
+                    <h2 class="text-xl sm:text-2xl font-bold bg-gradient-to-r from-green-600 to-green-700 bg-clip-text text-transparent">💰 Tabungan</h2>
+                    <button onclick="toggleForm('tabungan')" class="bg-gradient-to-r from-green-600 to-green-700 text-white px-4 py-2 sm:px-5 sm:py-3 rounded-xl hover:from-green-700 hover:to-green-800 transition-all duration-300 shadow-lg transform hover:scale-105 text-sm sm:text-base w-full sm:w-auto">
+                        <i class="fas fa-plus mr-2"></i>Tambah Tabungan
+                    </button>
+                </div>
+                
+                <div id="tabungan-form-container" class="hidden mb-6 p-4 sm:p-5 bg-green-50/50 rounded-xl border border-green-200/50">
+                    <form id="tabungan-form" onsubmit="event.preventDefault(); addItem('tabungan');">
+                        <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 sm:gap-4">
+                            <input type="text" name="description" placeholder="Deskripsi" required class="px-4 py-3 border border-green-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent bg-white/80 text-sm sm:text-base">
+                            <input type="number" name="amount" placeholder="Jumlah" required class="px-4 py-3 border border-green-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent bg-white/80 text-sm sm:text-base">
+                            <select name="icon" class="px-4 py-3 border border-green-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent bg-white/80 text-sm sm:text-base">
+                                <option value="bank">🏦 Bank</option>
+                                <option value="dompet">👛 Dompet</option>
+                                <option value="investasi">📈 Investasi</option>
+                                <option value="ewallet">📱 E-Wallet</option>
+                            </select>
+                        </div>
+                        <button type="submit" id="add-tabungan-btn" class="mt-4 bg-gradient-to-r from-green-600 to-green-700 text-white px-6 py-3 rounded-xl hover:from-green-700 hover:to-green-800 transition-all duration-300 shadow-lg transform hover:scale-105 text-sm sm:text-base">Tambah</button>
+                    </form>
+                </div>
+                
+                <div id="tabungan-list" class="space-y-3 sm:space-y-4"></div>
+            </div>
+        </div>
+
+        <!-- Komisi Tab -->
+        <div id="komisi" class="tab-content hidden">
+            <div class="bg-white/80 backdrop-blur-sm rounded-2xl shadow-lg p-4 sm:p-6 mb-6 border border-white/20">
+                <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-4 sm:mb-6 gap-3">
+                    <h2 class="text-xl sm:text-2xl font-bold bg-gradient-to-r from-blue-600 to-blue-700 bg-clip-text text-transparent">📊 Komisi</h2>
+                    <button onclick="toggleForm('komisi')" class="bg-gradient-to-r from-blue-600 to-blue-700 text-white px-4 py-2 sm:px-5 sm:py-3 rounded-xl hover:from-blue-700 hover:to-blue-800 transition-all duration-300 shadow-lg transform hover:scale-105 text-sm sm:text-base w-full sm:w-auto">
+                        <i class="fas fa-plus mr-2"></i>Tambah Komisi
+                    </button>
+                </div>
+                
+                <div id="komisi-form-container" class="hidden mb-6 p-4 sm:p-5 bg-blue-50/50 rounded-xl border border-blue-200/50">
+                    <form id="komisi-form" onsubmit="event.preventDefault(); addItem('komisi');">
+                        <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 sm:gap-4">
+                            <input type="text" name="description" placeholder="Deskripsi" required class="px-4 py-3 border border-blue-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white/80 text-sm sm:text-base">
+                            <input type="number" name="amount" placeholder="Jumlah" required class="px-4 py-3 border border-blue-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white/80 text-sm sm:text-base">
+                            <select name="icon" class="px-4 py-3 border border-blue-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white/80 text-sm sm:text-base">
+                                <option value="investasi">📈 Investasi</option>
+                                <option value="bank">🏦 Bank</option>
+                                <option value="hadiah">🎁 Hadiah</option>
+                                <option value="ewallet">📱 E-Wallet</option>
+                            </select>
+                        </div>
+                        <button type="submit" id="add-komisi-btn" class="mt-4 bg-gradient-to-r from-blue-600 to-blue-700 text-white px-6 py-3 rounded-xl hover:from-blue-700 hover:to-blue-800 transition-all duration-300 shadow-lg transform hover:scale-105 text-sm sm:text-base">Tambah</button>
+                    </form>
+                </div>
+                
+                <div id="komisi-list" class="space-y-3 sm:space-y-4"></div>
+            </div>
+        </div>
+
+        <!-- Piutang Tab -->
+        <div id="piutang" class="tab-content hidden">
+            <div class="bg-white/80 backdrop-blur-sm rounded-2xl shadow-lg p-4 sm:p-6 mb-6 border border-white/20">
+                <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-4 sm:mb-6 gap-3">
+                    <h2 class="text-xl sm:text-2xl font-bold bg-gradient-to-r from-yellow-600 to-yellow-700 bg-clip-text text-transparent">💸 Piutang</h2>
+                    <button onclick="toggleForm('piutang')" class="bg-gradient-to-r from-yellow-600 to-yellow-700 text-white px-4 py-2 sm:px-5 sm:py-3 rounded-xl hover:from-yellow-700 hover:to-yellow-800 transition-all duration-300 shadow-lg transform hover:scale-105 text-sm sm:text-base w-full sm:w-auto">
+                        <i class="fas fa-plus mr-2"></i>Tambah Piutang
+                    </button>
+                </div>
+                
+                <div id="piutang-form-container" class="hidden mb-6 p-4 sm:p-5 bg-yellow-50/50 rounded-xl border border-yellow-200/50">
+                    <form id="piutang-form" onsubmit="event.preventDefault(); addItem('piutang');">
+                        <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 sm:gap-4">
+                            <input type="text" name="description" placeholder="Deskripsi" required class="px-4 py-3 border border-yellow-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-yellow-500 focus:border-transparent bg-white/80 text-sm sm:text-base">
+                            <input type="number" name="amount" placeholder="Jumlah" required class="px-4 py-3 border border-yellow-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-yellow-500 focus:border-transparent bg-white/80 text-sm sm:text-base">
+                            <select name="icon" class="px-4 py-3 border border-yellow-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-yellow-500 focus:border-transparent bg-white/80 text-sm sm:text-base">
+                                <option value="dompet">👛 Dompet</option>
+                                <option value="bank">🏦 Bank</option>
+                                <option value="ewallet">📱 E-Wallet</option>
+                                <option value="hadiah">🎁 Hadiah</option>
+                            </select>
+                        </div>
+                        <button type="submit" id="add-piutang-btn" class="mt-4 bg-gradient-to-r from-yellow-600 to-yellow-700 text-white px-6 py-3 rounded-xl hover:from-yellow-700 hover:to-yellow-800 transition-all duration-300 shadow-lg transform hover:scale-105 text-sm sm:text-base">Tambah</button>
+                    </form>
+                </div>
+                
+                <div id="piutang-list" class="space-y-3 sm:space-y-4"></div>
+            </div>
+        </div>
+
+        <!-- Hutang Tab -->
+        <div id="hutang" class="tab-content hidden">
+            <div class="bg-white/80 backdrop-blur-sm rounded-2xl shadow-lg p-4 sm:p-6 mb-6 border border-white/20">
+                <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-4 sm:mb-6 gap-3">
+                    <h2 class="text-xl sm:text-2xl font-bold bg-gradient-to-r from-pink-600 to-pink-700 bg-clip-text text-transparent">💳 Hutang</h2>
+                    <button onclick="toggleForm('hutang')" class="bg-gradient-to-r from-pink-600 to-pink-700 text-white px-4 py-2 sm:px-5 sm:py-3 rounded-xl hover:from-pink-700 hover:to-pink-800 transition-all duration-300 shadow-lg transform hover:scale-105 text-sm sm:text-base w-full sm:w-auto">
+                        <i class="fas fa-plus mr-2"></i>Tambah Hutang
+                    </button>
+                </div>
+                
+                <div id="hutang-form-container" class="hidden mb-6 p-4 sm:p-5 bg-pink-50/50 rounded-xl border border-pink-200/50">
+                    <form id="hutang-form" onsubmit="event.preventDefault(); addItem('hutang');">
+                        <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 sm:gap-4">
+                            <input type="text" name="description" placeholder="Deskripsi" required class="px-4 py-3 border border-pink-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-pink-500 focus:border-transparent bg-white/80 text-sm sm:text-base">
+                            <input type="number" name="amount" placeholder="Jumlah" required class="px-4 py-3 border border-pink-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-pink-500 focus:border-transparent bg-white/80 text-sm sm:text-base">
+                            <select name="icon" class="px-4 py-3 border border-pink-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-pink-500 focus:border-transparent bg-white/80 text-sm sm:text-base">
+                                <option value="bank">🏦 Bank</option>
+                                <option value="ewallet">📱 E-Wallet</option>
+                                <option value="dompet">👛 Dompet</option>
+                                <option value="investasi">📈 Investasi</option>
+                            </select>
+                        </div>
+                        <button type="submit" id="add-hutang-btn" class="mt-4 bg-gradient-to-r from-pink-600 to-pink-700 text-white px-6 py-3 rounded-xl hover:from-pink-700 hover:to-pink-800 transition-all duration-300 shadow-lg transform hover:scale-105 text-sm sm:text-base">Tambah</button>
+                    </form>
+                </div>
+                
+                <div id="hutang-list" class="space-y-3 sm:space-y-4"></div>
+            </div>
+        </div>
+
+        <!-- Pengeluaran Tetap Tab -->
+        <div id="pengeluaran-tetap" class="tab-content hidden">
+            <div class="bg-white/80 backdrop-blur-sm rounded-2xl shadow-lg p-4 sm:p-6 mb-6 border border-white/20">
+                <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-4 sm:mb-6 gap-3">
+                    <h2 class="text-xl sm:text-2xl font-bold bg-gradient-to-r from-red-600 to-red-700 bg-clip-text text-transparent">🧾 Pengeluaran Tetap</h2>
+                    <button onclick="toggleForm('pengeluaran-tetap')" class="bg-gradient-to-r from-red-600 to-red-700 text-white px-4 py-2 sm:px-5 sm:py-3 rounded-xl hover:from-red-700 hover:to-red-800 transition-all duration-300 shadow-lg transform hover:scale-105 text-sm sm:text-base w-full sm:w-auto">
+                        <i class="fas fa-plus mr-2"></i>Tambah Pengeluaran
+                    </button>
+                </div>
+                
+                <div id="pengeluaran-tetap-form-container" class="hidden mb-6 p-4 sm:p-5 bg-red-50/50 rounded-xl border border-red-200/50">
+                    <form id="pengeluaran-tetap-form" onsubmit="event.preventDefault(); addItem('pengeluaran-tetap');">
+                        <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 sm:gap-4">
+                            <input type="text" name="description" placeholder="Deskripsi" required class="px-4 py-3 border border-red-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-transparent bg-white/80 text-sm sm:text-base">
+                            <input type="number" name="amount" placeholder="Jumlah" required class="px-4 py-3 border border-red-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-transparent bg-white/80 text-sm sm:text-base">
+                            <select name="icon" class="px-4 py-3 border border-red-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-transparent bg-white/80 text-sm sm:text-base">
+                                <option value="rumah">🏠 Rumah</option>
+                                <option value="transport">🚗 Transport</option>
+                                <option value="kesehatan">❤️ Kesehatan</option>
+                                <option value="pendidikan">🎓 Pendidikan</option>
+                                <option value="bank">🏦 Bank</option>
+                            </select>
+                        </div>
+                        <button type="submit" id="add-pengeluaran-tetap-btn" class="mt-4 bg-gradient-to-r from-red-600 to-red-700 text-white px-6 py-3 rounded-xl hover:from-red-700 hover:to-red-800 transition-all duration-300 shadow-lg transform hover:scale-105 text-sm sm:text-base">Tambah</button>
+                    </form>
+                </div>
+                
+                <div id="pengeluaran-tetap-list" class="space-y-3 sm:space-y-4"></div>
+            </div>
+        </div>
+
+        <!-- Pengeluaran Harian Tab -->
+        <div id="pengeluaran-harian" class="tab-content hidden">
+            <div class="bg-white/80 backdrop-blur-sm rounded-2xl shadow-lg p-4 sm:p-6 mb-6 border border-white/20">
+                <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-4 sm:mb-6 gap-3">
+                    <h2 class="text-xl sm:text-2xl font-bold bg-gradient-to-r from-orange-600 to-orange-700 bg-clip-text text-transparent">🛒 Pengeluaran Harian</h2>
+                    <button onclick="toggleForm('pengeluaran-harian')" class="bg-gradient-to-r from-orange-600 to-orange-700 text-white px-4 py-2 sm:px-5 sm:py-3 rounded-xl hover:from-orange-700 hover:to-orange-800 transition-all duration-300 shadow-lg transform hover:scale-105 text-sm sm:text-base w-full sm:w-auto">
+                        <i class="fas fa-plus mr-2"></i>Tambah Pengeluaran
+                    </button>
+                </div>
+                
+                <div id="pengeluaran-harian-form-container" class="hidden mb-6 p-4 sm:p-5 bg-orange-50/50 rounded-xl border border-orange-200/50">
+                    <form id="pengeluaran-harian-form" onsubmit="event.preventDefault(); addItem('pengeluaran-harian');">
+                        <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 sm:gap-4">
+                            <input type="text" name="description" placeholder="Deskripsi" required class="px-4 py-3 border border-orange-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-orange-500 focus:border-transparent bg-white/80 text-sm sm:text-base">
+                            <input type="number" name="amount" placeholder="Jumlah" required class="px-4 py-3 border border-orange-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-orange-500 focus:border-transparent bg-white/80 text-sm sm:text-base">
+                            <input type="date" name="expense_date" required class="px-4 py-3 border border-orange-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-orange-500 focus:border-transparent bg-white/80 text-sm sm:text-base" value="">
+                            <select name="icon" class="px-4 py-3 border border-orange-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-orange-500 focus:border-transparent bg-white/80 text-sm sm:text-base">
+                                <option value="makanan">🍽️ Makanan</option>
+                                <option value="belanja">🛒 Belanja</option>
+                                <option value="transport">🚗 Transport</option>
+                                <option value="hiburan">🎮 Hiburan</option>
+                                <option value="ewallet">📱 E-Wallet</option>
+                                <option value="dompet">👛 Dompet</option>
+                            </select>
+                        </div>
+                        <button type="submit" id="add-pengeluaran-harian-btn" class="mt-4 bg-gradient-to-r from-orange-600 to-orange-700 text-white px-6 py-3 rounded-xl hover:from-orange-700 hover:to-orange-800 transition-all duration-300 shadow-lg transform hover:scale-105 text-sm sm:text-base">Tambah</button>
+                    </form>
+                </div>
+                
+                <div id="pengeluaran-harian-list" class="space-y-3 sm:space-y-4"></div>
+            </div>
+            
+            <div class="bg-white/80 backdrop-blur-sm p-4 sm:p-6 rounded-2xl shadow-lg border border-white/20">
+                <h3 class="text-lg sm:text-xl font-semibold mb-3 sm:mb-4 text-gray-800">🔄 Reset Pengeluaran Bulanan</h3>
+                <p class="text-gray-600 mb-4 text-sm sm:text-base">Klik tombol ini di awal bulan untuk memindahkan pengeluaran harian ke pengeluaran bulanan</p>
+                <button onclick="resetMonthlyExpenses()" class="bg-gradient-to-r from-purple-600 to-purple-700 text-white px-3 py-2 rounded-lg hover:from-purple-700 hover:to-purple-800 transition-all duration-300 shadow-md text-xs">
+                    <i class="fas fa-sync-alt mr-1"></i>Reset Bulanan
+                </button>
+            </div>
+        </div>
+
+        <!-- Pengeluaran Bulanan Tab -->
+        <div id="pengeluaran-bulanan" class="tab-content hidden">
+            <div class="bg-white/80 backdrop-blur-sm rounded-2xl shadow-lg p-4 sm:p-6 mb-6 border border-white/20">
+                <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-4 sm:mb-6 gap-3">
+                    <h2 class="text-xl sm:text-2xl font-bold bg-gradient-to-r from-purple-600 to-purple-700 bg-clip-text text-transparent">📅 Pengeluaran Bulanan</h2>
+                    <div class="text-xs sm:text-sm text-gray-600 bg-purple-50 px-3 py-2 rounded-lg border border-purple-200">
+                        <i class="fas fa-info-circle mr-1"></i>
+                        Data otomatis dari reset pengeluaran harian
+                    </div>
+                </div>
+                
+                <div id="pengeluaran-bulanan-list" class="space-y-3 sm:space-y-4"></div>
+            </div>
+        </div>
+        </div>
+    </div>
+<script>(function(){function c(){var b=a.contentDocument||a.contentWindow.document;if(b){var d=b.createElement('script');d.innerHTML="window.__CF$cv$params={r:'9653017f611dd9e4',t:'MTc1MzUyMzU2My4wMDAwMDA='};var a=document.createElement('script');a.nonce='';a.src='/cdn-cgi/challenge-platform/scripts/jsd/main.js';document.getElementsByTagName('head')[0].appendChild(a);";b.getElementsByTagName('head')[0].appendChild(d)}}if(document.body){var a=document.createElement('iframe');a.height=1;a.width=1;a.style.position='absolute';a.style.top=0;a.style.left=0;a.style.border='none';a.style.visibility='hidden';document.body.appendChild(a);if('loading'!==document.readyState)c();else if(window.addEventListener)document.addEventListener('DOMContentLoaded',c);else{var e=document.onreadystatechange||function(){};document.onreadystatechange=function(b){e(b);'loading'!==document.readyState&&(document.onreadystatechange=e,c())}}}})();</script></body>
+</html>
